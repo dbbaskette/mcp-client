@@ -1,6 +1,42 @@
-# Project planning files
-combined_prompt.md
-PROJECT.md
-PROJECT_PLAN.mdrelease.sh
-.release-exec
+# Build output
+target/
+
+# IDE and editor configs
+.cursor.json
+.claude/
+.vscode/
+
+# Temp files
+temp/
+
+# Release scripts
 release.sh
+.release.conf
+
+# Prompt files
+prompt/
+
+# Maven wrapper
+.mvn/
+mvnw
+mvnw.cmd
+
+# Compiled Java classes
+*.class
+
+# Log files
+*.log
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Gemini-specific files
+.gemini.md
+.windsurf.json
+CLAUDE.md
+CURRENT.txt
+combined_prompt.md
+PROJECT*.md
+
