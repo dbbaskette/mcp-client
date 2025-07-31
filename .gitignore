@@ -1,4 +1,6 @@
 # Project planning files
 combined_prompt.md
 PROJECT.md
-PROJECT_PLAN.md
+PROJECT_PLAN.mdrelease.sh
+.release-exec
+release.sh
