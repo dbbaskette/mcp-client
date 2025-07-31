@@ -33,4 +33,11 @@ mvnw.cmd
 *.ear
 
 # Gemini-specific files
+.gemini.md.windsurf.json\nCLAUDE.md\nCURRENT.txt
 .gemini.md
+.windsurf.json
+CLAUDE.md
+CURRENT.txt
+combined_prompt.md
+/PROJECT.md
+/.vscode
