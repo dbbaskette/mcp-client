@@ -6,6 +6,7 @@ import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import com.baskettecase.mcpclient.config.McpConnectionConfigService;
 import com.baskettecase.mcpclient.util.ParameterParser;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -23,14 +24,17 @@ public class CliRunner implements CommandLineRunner {
     private final Environment environment;
     private final Scanner scanner = new Scanner(System.in);
     private final McpConnectionConfigService configService;
+    private final ConfigurableApplicationContext applicationContext;
     private volatile boolean running = true;
 
     public CliRunner(SyncMcpToolCallbackProvider toolCallbackProvider,
-                     ParameterParser parameterParser, Environment environment, McpConnectionConfigService configService) {
+                     ParameterParser parameterParser, Environment environment, 
+                     McpConnectionConfigService configService, ConfigurableApplicationContext applicationContext) {
         this.toolCallbackProvider = toolCallbackProvider;
         this.parameterParser = parameterParser;
         this.environment = environment;
         this.configService = configService;
+        this.applicationContext = applicationContext;
     }
 
     @Override
@@ -281,6 +285,16 @@ public class CliRunner implements CommandLineRunner {
     private void handleExit() {
         System.out.println("Shutting down MCP client... Goodbye!");
         running = false;
+        scanner.close();
+        // Shut down the Spring application context to properly exit
+        new Thread(() -> {
+            try {
+                Thread.sleep(100); // Brief delay to allow final output
+                applicationContext.close();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
     }
 
     private String extractToolName(String fullName) {

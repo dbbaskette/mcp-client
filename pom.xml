@@ -9,11 +9,11 @@
 		<version>3.3.2</version>
 		<relativePath /> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.example</groupId>
-	<artifactId>mcp-starter-webflux-client</artifactId>
+	<groupId>com.baskettecase</groupId>
+	<artifactId>mcp-client</artifactId>
 	<version>1.0.0</version>
-	<name>Spring AI - MCP Starter WebFlux Client</name>
-	<description>Spring AI - MCP Starter WebFlux Client</description>
+	<name>MCP Client</name>
+	<description>MCP Client</description>
 	
 	<properties>
 		<java.version>21</java.version>

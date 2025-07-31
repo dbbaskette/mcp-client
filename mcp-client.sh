@@ -7,8 +7,24 @@ set -e
 
 # Default values
 PROFILE="stdio"
-JAR_NAME="mcp-starter-webflux-client-0.0.1-SNAPSHOT.jar"
 VERBOSE=false
+
+# Function to get jar name dynamically
+get_jar_name() {
+    if [[ -d "target" ]]; then
+        # Find the jar file in target directory (excluding sources and javadoc jars)
+        local jar_file=$(find target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -1)
+        if [[ -n "$jar_file" ]]; then
+            basename "$jar_file"
+        else
+            error "No jar file found in target directory"
+            exit 1
+        fi
+    else
+        error "Target directory not found. Please build the project first."
+        exit 1
+    fi
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -85,7 +101,8 @@ esac
 
 # Build the application if needed
 build_if_needed() {
-    local jar_path="target/$JAR_NAME"
+    local jar_name=$(get_jar_name)
+    local jar_path="target/$jar_name"
     
     if [[ ! -f "$jar_path" ]]; then
         echo "JAR not found. Building application..."
@@ -104,7 +121,8 @@ echo
 
 build_if_needed
 
-jar_path="target/$JAR_NAME"
+jar_name=$(get_jar_name)
+jar_path="target/$jar_name"
 java_props="-Dspring.profiles.active=$PROFILE"
 
 if [[ "$VERBOSE" == "true" ]]; then
