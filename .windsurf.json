@@ -1,5 +1,0 @@
-{
-  "prompts": [ "PROJECT.md", "prompt/_base/core_prompt.md", "prompt/cli_tool/cli_prompt.md", "prompt/mcp_server/mcp_prompt.md" ],
-  "tags": ["mcp-client"],
-  "autoExpand": true
-}
