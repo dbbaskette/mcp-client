@@ -16,6 +16,7 @@ A general-purpose, interactive Model Context Protocol (MCP) client built with Sp
 
 - **Multiple Transport Protocols**: Supports STDIO, SSE (Server-Sent Events), and Streamable HTTP
 - **Spring Profile-Based Configuration**: Clean separation of transport configurations
+- **JWT Bearer Token Authentication**: Securely connect to MCP servers using JWT.
 - **AI Provider Integration**: Works with Anthropic Claude and OpenAI
 - **Command-Line Interface**: Easy-to-use script for testing MCP servers
 - **Extensible**: Add new MCP server configurations easily
@@ -52,11 +53,14 @@ This project is built on:
 ### Environment Variables
 
 ```bash
-# Required
+# Required for Anthropic integration
 export ANTHROPIC_API_KEY=your-anthropic-api-key
 
 # Required for Brave Search MCP server (STDIO profile)
 export BRAVE_API_KEY=your-brave-api-key
+
+# Required for OpenMetadata MCP server (SSE profile with JWT)
+export OPENMETADATA_PAT=your-openmetadata-pat
 
 # Optional for OpenAI integration
 export OPENAI_API_KEY=your-openai-api-key
@@ -150,10 +154,15 @@ spring.ai.mcp.client.stdio.connections.my-server.env.API_KEY=${YOUR_API_KEY}
 Edit `src/main/resources/application-sse.properties`:
 
 ```properties
-# Your SSE server
-spring.ai.mcp.client.sse.connections.my-sse-server.url=http://localhost:8080
-spring.ai.mcp.client.sse.connections.my-sse-server.sse-endpoint=/mcp/events
+# Your SSE server with JWT authentication
+spring.ai.mcp.client.sse.connections.my-sse-server.url=http://localhost:8080/mcp
+spring.ai.mcp.client.sse.connections.my-sse-server.sse-endpoint=/sse
+spring.ai.mcp.client.sse.connections.my-sse-server.headers.Authorization=Bearer ${OPENMETADATA_PAT}
+spring.ai.mcp.client.sse.connections.my-sse-server.timeout=60s
+spring.ai.mcp.client.sse.connections.my-sse-server.connect-timeout=30s
+spring.ai.mcp.client.sse.connections.my-sse-server.read-timeout=60s
 ```
+**Note on OpenMetadata SSE**: OpenMetadata servers may send `null` SSE event types which this client is configured to gracefully ignore. The URL is expected to be the base URL for the API (e.g., `/mcp`), and the `sse-endpoint` is the relative path (e.g., `/sse`).
 
 #### Streamable HTTP Servers
 
@@ -171,14 +180,18 @@ Base settings in `src/main/resources/application.properties`:
 ```properties
 # Application settings
 spring.application.name=mcp-client
-ai.user.input=What tools are available?
-
-# MCP Client settings
 spring.ai.mcp.client.toolcallback.enabled=true
 spring.ai.mcp.client.type=SYNC
 
-# Logging levels
+# Logging Configuration
+logging.level.io.modelcontextprotocol.client=INFO
+logging.level.io.modelcontextprotocol.spec=INFO
 logging.level.org.springframework.ai.mcp=INFO
+logging.level.reactor.core.publisher.Operators=WARN
+
+# MCP Connection Settings
+spring.ai.mcp.client.connection.resilient=true
+spring.ai.mcp.client.sse.lenient-parsing=true
 ```
 
 ## 🧪 Testing MCP Servers
@@ -198,27 +211,28 @@ logging.level.org.springframework.ai.mcp=INFO
 
 ### Custom MCP Server Testing
 
-1. **Configure your server** in the appropriate profile properties file
-2. **Set environment variables** if your server requires API keys
-3. **Run the client** with your profile:
+1.  **Set environment variables** if your server requires API keys (e.g., `OPENMETADATA_PAT`).
+2.  **Configure your server** in the appropriate profile properties file (e.g., `application-sse.properties` for OpenMetadata).
+3.  **Run the client** with your profile:
 
-```bash
-./mcp-client --profile your-profile --question "Your test question"
-```
+    ```bash
+    ./mcp-client --profile your-profile --question "Your test question"
+    ```
 
 ## 🔧 Development
 
 ### Project Structure
 
 ```
-src/main/java/org/springframework/ai/mcp/samples/client/
-├── Application.java                 # Main Spring Boot application
-src/main/resources/
-├── application.properties           # Common configuration
-├── application-stdio.properties     # STDIO transport config
-├── application-sse.properties       # SSE transport config
-├── application-streamable.properties # HTTP transport config
-└── mcp-servers-config.json         # Alternative JSON config format
+src/main/java/com/baskettecase/mcpclient/
+├── McpClientApplication.java        # Main Spring Boot application
+├── cli/                             # Command Line Interface components
+│   └── CliRunner.java
+└── config/                          # Spring configuration classes
+    ├── McpConnectionConfigService.java
+    ├── McpErrorHandlingConfig.java  # Global SSE error handling
+    ├── SslConfiguration.java        # SSL bypass configuration
+    └── WebClientConfig.java         # Global WebClient customization
 ```
 
 ### Building and Running
@@ -241,9 +255,7 @@ java -jar target/mcp-starter-webflux-client-0.0.1-SNAPSHOT.jar
 2. Configure connections using Spring AI MCP client properties
 3. Update the `mcp-client` script profile validation if needed
 
-## 🐛 Troubleshooting
-
-### Common Issues
+### Troubleshooting
 
 **Missing API Keys**
 ```bash
@@ -259,10 +271,9 @@ npm list -g @modelcontextprotocol/server-brave-search
 ```
 
 **SSE Connection Issues**
-```bash
-# Verify your SSE server is running
-curl -N http://localhost:8080/mcp/events
-```
+
+*   **500 Internal Server Error (Missing Authorization)**: Ensure your `OPENMETADATA_PAT` environment variable is correctly set and the URL in `application-sse.properties` is configured as `http://host:port/mcp` with `sse-endpoint=/sse`.
+*   **`Received unrecognized SSE event type: null`**: This is a known compatibility issue with some OpenMetadata server versions. The client is configured to gracefully ignore these events. If you still see errors, verify `spring.ai.mcp.client.sse.lenient-parsing=true` in `application.properties`.
 
 **Build Issues**
 ```bash
@@ -291,6 +302,7 @@ java -jar target/mcp-starter-webflux-client-0.0.1-SNAPSHOT.jar \
 - [Spring AI MCP Documentation](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)
 - [Model Context Protocol Specification](https://modelcontextprotocol.github.io/specification/)
 - [Spring Boot Documentation](https://docs.spring.io/spring-boot/docs/current/reference/html/)
+- [OpenMetadata Documentation](https://docs.open-metadata.org/) # Added for OpenMetadata specific context
 
 ## 🤝 Contributing
 
@@ -309,3 +321,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - [GitHub Issues](https://github.com/your-org/mcp-client/issues) - Bug reports and feature requests
 - [Spring AI Documentation](https://docs.spring.io/spring-ai/reference/) - Framework documentation
 - [MCP Specification](https://modelcontextprotocol.github.io/specification/) - Protocol documentation
+- [OpenMetadata Slack](https://slack.open-metadata.org/) # Added for OpenMetadata community support
