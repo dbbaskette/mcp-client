@@ -36,10 +36,20 @@ public class ParameterParser {
                 .filter(parts -> parts.length == 2)
                 .collect(Collectors.toMap(
                         parts -> parts[0],
-                        parts -> (Object) parts[1],
+                        parts -> (Object) trimQuotes(parts[1]),
                         (v1, v2) -> v2, // In case of duplicate keys, last one wins
                         HashMap::new
                 ));
+    }
+
+    private String trimQuotes(String value) {
+        if (value == null) {
+            return null;
+        }
+        if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
     }
 
     public String formatParameters(Map<String, Object> parameters) {

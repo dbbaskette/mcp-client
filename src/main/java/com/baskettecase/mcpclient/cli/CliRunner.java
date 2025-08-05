@@ -1,23 +1,29 @@
 package com.baskettecase.mcpclient.cli;
 
+import com.baskettecase.mcpclient.config.McpConnectionConfigService;
+import com.baskettecase.mcpclient.util.ParameterParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
-import com.baskettecase.mcpclient.config.McpConnectionConfigService;
-import com.baskettecase.mcpclient.util.ParameterParser;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Scanner;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class CliRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(CliRunner.class);
+
 
     private final SyncMcpToolCallbackProvider toolCallbackProvider;
     private final ParameterParser parameterParser;
@@ -48,7 +54,7 @@ public class CliRunner implements CommandLineRunner {
         System.out.println("Directly test your MCP servers without an LLM.");
         System.out.println("Active profile(s): " + String.join(", ", environment.getActiveProfiles()));
         System.out.println("\nAvailable commands:");
-        System.out.println("  connect <name> <type> <path|url> [profile] - Configure a new server (requires restart)");
+        System.out.println("  connect <name> <type> <options>  - Configure a new server (requires rebuild and restart)");
         System.out.println("  list-tools                       - List all available tools from all connected servers");
         System.out.println("  describe-tool <name>             - Show detailed information about a specific tool");
         System.out.println("  tool <name> <json-params>        - Execute a tool with JSON parameters");
@@ -95,53 +101,26 @@ public class CliRunner implements CommandLineRunner {
 
     private void handleConnect(String args) {
         if (args.isBlank()) {
-            System.out.println("Usage: connect <name> <type> <path|url> [profile]");
-            System.out.println("  <type> can be 'stdio' or 'sse'.");
-            System.out.println("  For 'stdio', provide the path to the server JAR.");
-            System.out.println("  For 'sse', provide the base URL of the server.");
-            System.out.println("  [profile] is optional - Spring profile for STDIO servers (e.g., 'stdio', 'dev')");
-            System.out.println("Examples:");
-            System.out.println("  connect myserver stdio /path/to/server.jar");
-            System.out.println("  connect myserver stdio /path/to/server.jar dev");
-            System.out.println("  connect myserver sse http://localhost:8080");
+            printConnectUsage();
             return;
         }
 
         String[] parts = args.split("\\s+");
-        if (parts.length < 3) {
-            System.out.println("❌ Invalid arguments. Usage: connect <name> <type> <path|url> [profile]");
+        if (parts.length < 4) {
+            printConnectUsage();
             return;
         }
 
         String name = parts[0];
         String type = parts[1].toLowerCase();
-        String location = parts[2];
-        String profile = parts.length > 3 ? parts[3] : null; // Optional profile parameter
 
         try {
             switch (type) {
                 case "sse":
-                    if (configService.sseConnectionExists(name)) {
-                        System.out.println("⚠️  An SSE connection named '" + name + "' already exists.");
-                        return;
-                    }
-                    configService.addSseConnection(name, location);
-                    System.out.println("\n✅ SSE server '" + name + "' configured successfully!");
-                    System.out.println("   To activate, restart the client with the 'sse' profile:");
-                    System.out.println("   ./mcp-client.sh --profile sse");
+                    handleSseConnect(name, parts);
                     break;
                 case "stdio":
-                    if (configService.stdioConnectionExists(name)) {
-                        System.out.println("⚠️  An STDIO connection named '" + name + "' already exists.");
-                        return;
-                    }
-                    configService.addStdioConnection(name, location, profile);
-                    System.out.println("\n✅ STDIO server '" + name + "' configured successfully!");
-                    if (profile != null) {
-                        System.out.println("   Spring profile: " + profile);
-                    }
-                    System.out.println("   To activate, restart the client with the 'stdio' profile:");
-                    System.out.println("   ./mcp-client.sh --profile stdio");
+                    handleStdioConnect(name, parts);
                     break;
                 default:
                     System.out.println("❌ Unknown transport type: '" + type + "'. Must be 'stdio' or 'sse'.");
@@ -152,6 +131,85 @@ public class CliRunner implements CommandLineRunner {
             logger.error("Error writing to properties file", e);
         }
         System.out.println();
+    }
+
+    private void printConnectUsage() {
+        System.out.println("Usage: connect <name> <type> <options>");
+        System.out.println("  <type> can be 'stdio' or 'sse'.");
+        System.out.println("\nFor 'stdio':");
+        System.out.println("  connect <name> stdio --jar <path/to.jar> [profile]");
+        System.out.println("  connect <name> stdio --native <command> [args...]");
+        System.out.println("  Example (JAR):   connect myserver stdio --jar /path/to/server.jar dev");
+        System.out.println("  Example (native): connect myexec stdio --native /path/to/executable arg1");
+
+        System.out.println("\nFor 'sse':");
+        System.out.println("  connect <name> sse --url <http://host:port>");
+        System.out.println("  Example: connect myserver sse --url http://localhost:8080");
+        System.out.println();
+    }
+
+    private void handleSseConnect(String name, String[] parts) throws IOException {
+        if (parts.length < 4 || !parts[2].equals("--url")) {
+            printConnectUsage();
+            return;
+        }
+        if (configService.sseConnectionExists(name)) {
+            System.out.println("⚠️  An SSE connection named '" + name + "' already exists.");
+            return;
+        }
+        String location = parts[3];
+        configService.addSseConnection(name, location);
+        System.out.println("\n✅ SSE server '" + name + "' configured successfully!");
+        System.out.println("   To activate, rebuild and restart the client:");
+        System.out.println("   ./mcp-client.sh --rebuild --profile sse");
+    }
+
+    private void handleStdioConnect(String name, String[] parts) throws IOException {
+        if (parts.length < 4) {
+            printConnectUsage();
+            return;
+        }
+        if (configService.stdioConnectionExists(name)) {
+            System.out.println("⚠️  An STDIO connection named '" + name + "' already exists.");
+            return;
+        }
+
+        String subType = parts[2];
+        switch (subType) {
+            case "--jar":
+                if (parts.length < 4) {
+                    printConnectUsage();
+                    return;
+                }
+                String jarPath = parts[3];
+                String profile = parts.length > 4 ? parts[4] : null;
+                configService.addStdioConnection(name, jarPath, profile);
+                System.out.println("\n✅ STDIO JAR server '" + name + "' configured successfully!");
+                if (profile != null) {
+                    System.out.println("   Spring profile: " + profile);
+                }
+                break;
+            case "--native":
+                if (parts.length < 4) {
+                    printConnectUsage();
+                    return;
+                }
+                String command = parts[3];
+                String[] commandArgs = new String[0];
+                if (parts.length > 4) {
+                    commandArgs = Arrays.copyOfRange(parts, 4, parts.length);
+                }
+                configService.addStdioNativeConnection(name, command, commandArgs);
+                System.out.println("\n✅ STDIO native server '" + name + "' configured successfully!");
+                break;
+            default:
+                System.out.println("❌ Invalid option for stdio. Must be '--jar' or '--native'.");
+                printConnectUsage();
+                return;
+        }
+
+        System.out.println("   To activate, rebuild and restart the client:");
+        System.out.println("   ./mcp-client.sh --rebuild --profile stdio");
     }
 
     private void handleListTools() {
@@ -284,17 +342,8 @@ public class CliRunner implements CommandLineRunner {
 
     private void handleExit() {
         System.out.println("Shutting down MCP client... Goodbye!");
-        running = false;
-        scanner.close();
-        // Shut down the Spring application context to properly exit
-        new Thread(() -> {
-            try {
-                Thread.sleep(100); // Brief delay to allow final output
-                applicationContext.close();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }).start();
+        // Force exit because applicationContext.close() can hang waiting for child processes.
+        System.exit(0);
     }
 
     private String extractToolName(String fullName) {
@@ -330,12 +379,23 @@ public class CliRunner implements CommandLineRunner {
         
         // Parse key=value pairs and convert to JSON
         // Use the existing ParameterParser to handle key=value parsing
-        String[] paramPairs = parameterString.split("\\s+");
+        String[] paramPairs = parseArguments(parameterString);
         var parsedParams = parameterParser.parseParameters(paramPairs);
         
         // Convert to JSON
         var mapper = new ObjectMapper();
         return mapper.writeValueAsString(parsedParams);
+    }
+
+    private String[] parseArguments(String input) {
+        List<String> args = new ArrayList<>();
+        // Regex to match key=value pairs, handling quoted values
+        Pattern pattern = Pattern.compile("(\\w+)=(\"[^\"]*\"|'[^']*'|\\S+)");
+        Matcher matcher = pattern.matcher(input);
+        while (matcher.find()) {
+            args.add(matcher.group(0));
+        }
+        return args.toArray(new String[0]);
     }
 
     private org.springframework.ai.tool.ToolCallback findToolByName(String toolName) {

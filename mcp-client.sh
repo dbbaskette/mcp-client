@@ -8,6 +8,7 @@ set -e
 # Default values
 PROFILE="stdio"
 VERBOSE=false
+REBUILD=false
 
 # Function to get jar name dynamically
 get_jar_name() {
@@ -17,12 +18,9 @@ get_jar_name() {
         if [[ -n "$jar_file" ]]; then
             basename "$jar_file"
         else
-            error "No jar file found in target directory"
-            exit 1
+            # If no JAR found, it might be because of a clean. We'll build later.
+            return
         fi
-    else
-        error "Target directory not found. Please build the project first."
-        exit 1
     fi
 }
 
@@ -42,9 +40,9 @@ usage() {
     echo ""
     echo "OPTIONS:"
     echo "    -p, --profile PROFILE       Transport profile: stdio, sse, streamable (default: stdio)"
+    echo "    --rebuild                   Force a clean rebuild of the application"
     echo "    -h, --help                  Show this help message"
     echo "    -v, --verbose               Enable verbose output (sets logging to DEBUG)"
-
 }
 
 # Function to log messages
@@ -73,6 +71,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --rebuild)
+            REBUILD=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -99,20 +101,24 @@ case $PROFILE in
         ;;
 esac
 
-# Build the application if needed
+# Build the application if needed or forced
 build_if_needed() {
     local jar_name=$(get_jar_name)
-    local jar_path="target/$jar_name"
     
-    if [[ ! -f "$jar_path" ]]; then
-        echo "JAR not found. Building application..."
-        if ! ./mvnw clean install; then
+    if [[ "$REBUILD" == "true" ]] || [[ -z "$jar_name" ]]; then
+        if [[ "$REBUILD" == "true" ]]; then
+            log "Rebuild requested. Cleaning and packaging..."
+        else
+            warn "JAR not found. Building application..."
+        fi
+        
+        if ! ./mvnw clean package; then
             error "Build failed."
             exit 1
         fi
         success "Build completed successfully"
     else
-        log "Using existing JAR: $jar_path"
+        log "Using existing JAR: target/$jar_name"
     fi
 }
 
@@ -122,6 +128,11 @@ echo
 build_if_needed
 
 jar_name=$(get_jar_name)
+if [[ -z "$jar_name" ]]; then
+    error "Could not find or build the application JAR. Exiting."
+    exit 1
+fi
+
 jar_path="target/$jar_name"
 java_props="-Dspring.profiles.active=$PROFILE"
 

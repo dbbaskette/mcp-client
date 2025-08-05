@@ -36,16 +36,35 @@ public class McpConnectionConfigService {
     }
 
     public void addSseConnection(String serverName, String url) throws IOException {
+        addSseConnection(serverName, url, false);
+    }
+
+    public void addSseConnection(String serverName, String url, boolean skipSslValidation) throws IOException {
+        addSseConnection(serverName, url, "/sse", null, skipSslValidation);
+    }
+
+    public void addSseConnection(String serverName, String url, String sseEndpoint, String authHeader, boolean skipSslValidation) throws IOException {
         Path propertiesPath = RESOURCES_PATH.resolve("application-sse.properties");
         if (!Files.exists(propertiesPath)) {
             Files.createFile(propertiesPath);
         }
-        String config = String.format(
-                "\n# Connection for %s\n" +
-                "spring.ai.mcp.client.sse.connections.%s.url=%s\n" +
-                "spring.ai.mcp.client.sse.connections.%s.sse-endpoint=/sse\n",
-                serverName, serverName, url, serverName);
-        Files.writeString(propertiesPath, config, StandardOpenOption.APPEND);
+        
+        StringBuilder configBuilder = new StringBuilder();
+        configBuilder.append(String.format("\n# Connection for %s\n", serverName));
+        configBuilder.append(String.format("spring.ai.mcp.client.sse.connections.%s.url=%s\n", serverName, url));
+        configBuilder.append(String.format("spring.ai.mcp.client.sse.connections.%s.sse-endpoint=%s\n", serverName, sseEndpoint));
+        
+        // Add authorization header if provided
+        if (authHeader != null && !authHeader.trim().isEmpty()) {
+            configBuilder.append(String.format("spring.ai.mcp.client.sse.connections.%s.headers.Authorization=%s\n", serverName, authHeader));
+        }
+        
+        // Add SSL skip validation if requested
+        if (skipSslValidation) {
+            configBuilder.append(String.format("spring.ai.mcp.client.sse.connections.%s.skip-ssl-validation=true\n", serverName));
+        }
+        
+        Files.writeString(propertiesPath, configBuilder.toString(), StandardOpenOption.APPEND);
     }
 
     public void addStdioConnection(String serverName, String jarPath) throws IOException {
@@ -66,6 +85,22 @@ public class McpConnectionConfigService {
                 "spring.ai.mcp.client.stdio.connections.%s.command=java\n" +
                 "spring.ai.mcp.client.stdio.connections.%s.args=-Dspring.profiles.active=%s,-jar,%s\n",
                 serverName, serverName, serverName, springProfile, jarPath);
+        Files.writeString(propertiesPath, config, StandardOpenOption.APPEND);
+    }
+
+    public void addStdioNativeConnection(String serverName, String command, String[] args) throws IOException {
+        Path propertiesPath = RESOURCES_PATH.resolve("application-stdio.properties");
+        if (!Files.exists(propertiesPath)) {
+            Files.createFile(propertiesPath);
+        }
+
+        String argsString = String.join(",", args);
+
+        String config = String.format(
+                "\n# Connection for %s (native executable)\n" +
+                "spring.ai.mcp.client.stdio.connections.%s.command=%s\n" +
+                "spring.ai.mcp.client.stdio.connections.%s.args=%s\n",
+                serverName, serverName, command, serverName, argsString);
         Files.writeString(propertiesPath, config, StandardOpenOption.APPEND);
     }
 }
