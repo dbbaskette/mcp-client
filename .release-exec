@@ -32,6 +32,7 @@ BUILD_TOOL=""
 MAIN_BRANCH=""
 DRY_RUN=false
 UPLOAD_ONLY=false
+NO_RELEASE=false
 PLUGINS_DIR="plugins"
 
 # Load from config file if it exists
@@ -86,6 +87,35 @@ execute() {
     fi
 }
 
+show_usage() {
+    cat << EOF
+Generic Project Release Script
+
+USAGE:
+    $0 [OPTIONS]
+
+DESCRIPTION:
+    Automates the complete release process for Maven or Gradle projects including
+    version management, building, git operations, and GitHub releases.
+
+OPTIONS:
+    --dry-run           Preview the entire release process without making changes
+    --upload-only       Only upload artifacts to an existing GitHub release
+    --no-update         Skip the self-update mechanism
+    --no-release        Skip GitHub release creation (build, commit, tag only)
+    --help              Show this help message
+
+EXAMPLES:
+    $0                  Run a complete release (interactive)
+    $0 --dry-run        Preview what would happen without making changes
+    $0 --no-release     Build and tag locally without creating GitHub release
+    $0 --upload-only    Upload artifacts to existing release
+
+For more information, see: https://github.com/dbbaskette/release
+EOF
+    exit 0
+}
+
 # ==============================================================================
 # PLUGIN ENGINE
 # ==============================================================================
@@ -95,7 +125,7 @@ run_plugins() {
     local hook_dir="$PLUGINS_DIR/$hook_name"
     if [ -d "$hook_dir" ]; then
         # print_info "Running $hook_name plugins..."  # Commented out to reduce verbose output
-        for plugin in $(find "$hook_dir" -type f -executable | sort); do
+        for plugin in $(find "$hook_dir" -type f -perm +111 2>/dev/null | sort); do
             # print_info "Executing plugin: $plugin"  # Commented out to reduce verbose output
             execute "$plugin"
         done
@@ -111,6 +141,8 @@ while [[ "$#" -gt 0 ]]; do
         --dry-run) DRY_RUN=true ;;
         --upload-only) UPLOAD_ONLY=true ;;
         --no-update) SKIP_UPDATE=true ;;
+        --no-release) NO_RELEASE=true ;;
+        --help) show_usage ;;
         *) print_error "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -719,8 +751,13 @@ main() {
     print_info "3. Build project with new version"
     print_info "4. Commit and push changes"
     print_info "5. Create and push git tag: v$new_version"
-    print_info "6. Create GitHub release with JAR upload"
-    print_info "7. Complete release process"
+    if [ "$NO_RELEASE" = true ]; then
+        print_info "6. Skip GitHub release creation (--no-release flag)"
+        print_info "7. Complete local release process"
+    else
+        print_info "6. Create GitHub release with JAR upload"
+        print_info "7. Complete release process"
+    fi
     read -p "Proceed with release? (y/N): " proceed_choice
     if [[ ! "$proceed_choice" =~ ^[Yy]$ ]]; then
         print_info "Release cancelled."
@@ -782,23 +819,29 @@ main() {
     execute "git" "push" "origin" "v$new_version"
     print_info "✓ Git tag v$new_version created and pushed"
 
-    # STEP 6: Create GitHub release
-    print_info "=== Step 6: Creating GitHub release ==="
-    if [ "$DRY_RUN" = false ] && gh release view "v$new_version" > /dev/null 2>&1; then
-        print_info "Release v$new_version already exists. Skipping creation..."
+    # STEP 6: Create GitHub release (or skip if --no-release)
+    if [ "$NO_RELEASE" = true ]; then
+        print_info "=== Step 6: Skipping GitHub release creation (--no-release flag) ==="
+        print_success "✓ Local release process completed without creating GitHub release"
+        print_info "To create GitHub release later, run: gh release create v$new_version --title 'Release v$new_version' --notes '$release_notes' '$artifact_path'"
     else
-        if ! create_github_release_with_retry "v$new_version" "Release v$new_version" "$release_notes" "$artifact_path"; then
-            print_error "Failed to create GitHub release."
-            read -p "Rollback changes? (y/N): " rollback_choice
-            if [[ "$rollback_choice" =~ ^[Yy]$ ]]; then
-                rollback_git_changes "$new_version"
+        print_info "=== Step 6: Creating GitHub release ==="
+        if [ "$DRY_RUN" = false ] && gh release view "v$new_version" > /dev/null 2>&1; then
+            print_info "Release v$new_version already exists. Skipping creation..."
+        else
+            if ! create_github_release_with_retry "v$new_version" "Release v$new_version" "$release_notes" "$artifact_path"; then
+                print_error "Failed to create GitHub release."
+                read -p "Rollback changes? (y/N): " rollback_choice
+                if [[ "$rollback_choice" =~ ^[Yy]$ ]]; then
+                    rollback_git_changes "$new_version"
+                fi
+                exit 1
             fi
-            exit 1
         fi
-    fi
 
-    # STEP 7: JAR upload is handled during release creation
-    print_info "=== Step 7: JAR upload completed during release creation ==="
+        # STEP 7: JAR upload is handled during release creation
+        print_info "=== Step 7: JAR upload completed during release creation ==="
+    fi
 
     # Ensure VERSION file is committed and pushed
     if [[ -f "$VERSION_FILE" ]]; then
@@ -813,7 +856,11 @@ main() {
     fi
 
     run_plugins "post-release"
-    print_success "Release v$new_version successful!"
+    if [ "$NO_RELEASE" = true ]; then
+        print_success "Local release v$new_version successful! (GitHub release skipped)"
+    else
+        print_success "Release v$new_version successful!"
+    fi
 }
 
 # Cleanup function to remove temporary execution script
