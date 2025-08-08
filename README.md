@@ -30,7 +30,7 @@
 - [🧰 Requirements](#-requirements)
 - [🚀 Quick Start](#-quick-start)
 - [🧩 Transports & Profiles](#-transports--profiles)
-- [🔐 JWT Setup (OpenMetadata)](#-jwt-setup-openmetadata)
+- [🔐 SSE Configuration (Auth & No-Auth)](#-sse-configuration-auth--no-auth)
 - [🖥️ CLI Usage](#️-cli-usage)
 - [🧪 Examples](#-examples)
 - [🧯 Troubleshooting](#-troubleshooting)
@@ -45,10 +45,10 @@
 ## ⚡ Highlights
 - 🧵 Multiple transports: **STDIO**, **SSE**, **Streamable HTTP**
 - 🧪 Built for testing MCP servers without an LLM
-- 🔐 First-class support for **JWT Bearer** authentication (e.g., OpenMetadata)
+- 🔐 First-class support for **JWT Bearer** authentication (works with API gateways / protected servers)
 - 🧭 Interactive CLI: list tools, describe tools, invoke tools with JSON
 - 🧱 Spring profile-based configuration for clean separation
-- 🛡️ Resilient SSE handling with compatibility tweaks for OpenMetadata
+- 🛡️ Resilient SSE handling with compatibility tweaks for diverse servers
 
 ---
 
@@ -66,8 +66,8 @@ export ANTHROPIC_API_KEY=your-anthropic-api-key
 # If testing Brave Search server via STDIO
 export BRAVE_API_KEY=your-brave-api-key
 
-# If connecting to OpenMetadata via SSE with JWT
-export OPENMETADATA_PAT=your-openmetadata-pat
+# If connecting to a JWT-protected SSE server
+export SERVER_JWT=your-jwt-token
 ```
 
 ---
@@ -104,21 +104,31 @@ Files live under `src/main/resources`:
 
 ---
 
-## 🔐 JWT Setup (OpenMetadata)
-OpenMetadata SSE typically authenticates at a base path (e.g., `/mcp`) and streams at `/sse`.
+## 🔐 SSE Configuration (Auth & No-Auth)
+Below are two common SSE setups.
 
-Edit `src/main/resources/application-sse.properties`:
+### Authenticated SSE (JWT Bearer)
+Some servers authenticate at a base path (e.g., `/mcp`) and stream at `/sse`.
 
 ```properties
-# OpenMetadata SSE (JWT via Authorization header)
-spring.ai.mcp.client.sse.connections.omd.url=http://your-host:8585/mcp
-spring.ai.mcp.client.sse.connections.omd.sse-endpoint=/sse
-spring.ai.mcp.client.sse.connections.omd.headers.Authorization=Bearer ${OPENMETADATA_PAT}
+# src/main/resources/application-sse.properties
+spring.ai.mcp.client.sse.connections.secure.url=http://your-host:8585/mcp
+spring.ai.mcp.client.sse.connections.secure.sse-endpoint=/sse
+spring.ai.mcp.client.sse.connections.secure.headers.Authorization=Bearer ${SERVER_JWT}
 
-# Connection resilience (optional)
-spring.ai.mcp.client.sse.connections.omd.timeout=60s
-spring.ai.mcp.client.sse.connections.omd.connect-timeout=30s
-spring.ai.mcp.client.sse.connections.omd.read-timeout=60s
+# Optional resilience
+apring.ai.mcp.client.sse.connections.secure.timeout=60s
+spring.ai.mcp.client.sse.connections.secure.connect-timeout=30s
+spring.ai.mcp.client.sse.connections.secure.read-timeout=60s
+```
+
+### Public SSE (No Auth)
+If your server doesn’t require authentication, configure it like this:
+
+```properties
+# src/main/resources/application-sse.properties
+spring.ai.mcp.client.sse.connections.public.url=http://localhost:8080
+spring.ai.mcp.client.sse.connections.public.sse-endpoint=/sse
 ```
 
 Global application settings (already tuned for clean output and resilience) in `application.properties`:
@@ -139,7 +149,7 @@ spring.ai.mcp.client.connection.resilient=true
 spring.ai.mcp.client.sse.lenient-parsing=true
 ```
 
-Compatibility: Some OpenMetadata servers may emit occasional `null` SSE event types — the client is configured to gracefully ignore these.
+Note: Some SSE servers may emit occasional events with missing `event:` types; the client is configured to ignore benign anomalies.
 
 ---
 
@@ -177,22 +187,22 @@ mcp-client> list-tools
 - Describe a tool’s input schema and usage:
 
 ```text
-mcp-client> describe-tool spring_ai_mcp_client_omd_search_metadata
+mcp-client> describe-tool spring_ai_mcp_client_example_tool
 ```
 
 - Invoke a tool with JSON parameters:
 
 ```text
-mcp-client> tool spring_ai_mcp_client_omd_search_metadata {"query":"warehouses","limit":5}
+mcp-client> tool spring_ai_mcp_client_example_tool {"query":"warehouses","limit":5}
 ```
 
 ---
 
 ## 🧯 Troubleshooting
-- 500 on `/mcp/sse` (SSE): ensure the `Authorization` header is set with a valid JWT and the base URL is `/mcp` with `sse-endpoint=/sse`.
-- SSE null event errors: handled silently by default; they’re benign on some OpenMetadata versions.
-- Timeouts while listing tools: increase timeouts in `application-sse.properties` (see example above).
-- Still stuck? Run with `--rebuild` and verify env vars: `echo $OPENMETADATA_PAT`.
+- 500 on SSE endpoint: Ensure a valid `Authorization` header (for protected servers) and correct base/endpoint paths.
+- Random SSE event anomalies: Client ignores benign `null`/missing-type events by default.
+- Timeouts while listing tools: increase timeouts in your SSE connection block.
+- Still stuck? Run with `--rebuild` and verify your env vars: `echo $SERVER_JWT`.
 
 ---
 
@@ -251,5 +261,3 @@ Licensed under the **Apache 2.0** License. See `LICENSE` for details.
 - [Spring AI MCP Docs](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html)
 - [MCP Specification](https://modelcontextprotocol.github.io/specification/)
 - [Spring Boot Docs](https://docs.spring.io/spring-boot/docs/current/reference/html/)
-- [OpenMetadata Docs](https://docs.open-metadata.org/)
-- [OpenMetadata Slack](https://slack.open-metadata.org/)
